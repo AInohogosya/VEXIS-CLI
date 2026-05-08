@@ -690,8 +690,8 @@ class FivePhaseEngine:
                         continue
                     return False
                 
-                # Extract and concatenate all code blocks
-                summary = self._extract_all_code_blocks(response.content)
+                # Use the full response content as the summary (plain text, not code blocks)
+                summary = response.content.strip()
                 
                 if summary:
                     context.final_summary = summary

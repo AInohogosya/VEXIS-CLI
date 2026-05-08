@@ -102,7 +102,7 @@ CRITICAL SUMMARY REQUIREMENTS:
 2. **Success Criteria** - Explain specifically how success was verified (not just that commands ran)
 3. **Retry History** - If multiple attempts were made, summarize what approaches were tried and why the final one succeeded
 4. **Final Result** - State what was actually achieved vs. what was requested
-5. **Output Format** - Place your entire summary inside a single code block
+5. **Output Format** - Provide your summary as PLAIN TEXT. Do NOT use code blocks. Do NOT include shell commands or scripts. Write a natural language explanation.
 
 Remember: "Completed" does NOT mean "Succeeded". Be explicit about whether the goal was fully achieved.{conversation_history}''',
         }
