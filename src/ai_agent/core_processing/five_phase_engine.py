@@ -616,6 +616,7 @@ class FivePhaseEngine:
                 prompt=full_terminal_log,
                 context={
                     "user_prompt": context.user_prompt,
+                    "full_terminal_log_so_far": full_terminal_log,
                 },
                 max_tokens=4000,
                 temperature=0.5
@@ -675,6 +676,7 @@ class FivePhaseEngine:
                     prompt=full_terminal_log,
                     context={
                         "user_prompt": context.user_prompt,
+                        "full_terminal_log": full_terminal_log,
                     },
                     max_tokens=4000,
                     temperature=0.7

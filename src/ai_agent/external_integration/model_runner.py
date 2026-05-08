@@ -322,6 +322,7 @@ class ModelRunner:
             format_vars.update(request.context)
 
         format_vars.setdefault("os_info", "Unknown OS")
+        format_vars.setdefault("conversation_history", "")
 
         try:
             formatted_prompt = template.format(**format_vars)
