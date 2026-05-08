@@ -140,6 +140,7 @@ class ModelRunner:
     # Valid Ollama model names
     DEFAULT_OLLAMA_MODEL = "llama3.2:latest"
     DEFAULT_GOOGLE_MODEL = "gemini-3.1-pro-preview"
+    MAX_RETRIES = 3
 
     def __init__(self, provider: str = None, model: str = None, config: Optional[Dict[str, Any]] = None, auto_install_sdks: bool = False):
         # Direct provider and model from runtime arguments
@@ -161,18 +162,12 @@ class ModelRunner:
         )
 
     def run_model(self, request: ModelRequest) -> ModelResponse:
-        """Run AI model for CLI Architecture"""
+        """Run AI model for CLI Architecture with retry on validation failure"""
         start_time = time.time()
 
         try:
             # Validate request
             self._validate_request(request)
-
-            # Format prompt
-            prompt = self._format_prompt(request)
-
-            # Get system instructions for API request
-            system_instructions = self._get_system_instructions(request.task_type)
 
             # Use runtime provider and model if provided, otherwise fallback to settings
             if self.provider and self.model:
@@ -191,90 +186,149 @@ class ModelRunner:
             if not model_name:
                 raise ValidationError(f"No model configured for provider '{provider_name}'. Please select a model first.")
 
-            # Create API request with user's exact selection
-            api_request = APIRequest(
-                prompt=prompt,
-                image_data=request.image_data,
-                image_format=request.image_format,
-                max_tokens=request.max_tokens,
-                temperature=request.temperature,
-                model=model_name,
-                provider=provider_name,
-                system_instruction=system_instructions
-            )
+            # Retry loop for validation failures
+            for attempt in range(self.MAX_RETRIES):
+                # Format prompt
+                prompt = self._format_prompt(request)
 
-            # Make API call
-            api_response = self.vision_client.generate_response(api_request)
+                # Get system instructions for API request
+                system_instructions = self._get_system_instructions(request.task_type)
 
-            # Create model response
-            model_response = ModelResponse(
-                success=api_response.success,
-                content=api_response.content,
-                task_type=request.task_type,
-                model=api_response.model or model_name,
-                provider=api_response.provider or provider_name,
-                tokens_used=api_response.tokens_used,
-                cost=api_response.cost,
-                latency=time.time() - start_time,
-                error=api_response.error,
-            )
+                # Add retry instruction if not first attempt
+                if attempt > 0:
+                    system_instructions += f"\n\n## RETRY ATTEMPT {attempt + 1}/{self.MAX_RETRIES}\nYour previous output did not meet the expected format. Please carefully follow the format requirements and provide a valid response."
 
-            if api_response.success:
-                self.logger.info(
-                    "Model execution successful",
-                    task_type=request.task_type.value,
-                    model=model_response.model,
-                    latency=model_response.latency,
+                # Create API request with user's exact selection
+                api_request = APIRequest(
+                    prompt=prompt,
+                    image_data=request.image_data,
+                    image_format=request.image_format,
+                    max_tokens=request.max_tokens,
+                    temperature=request.temperature,
+                    model=model_name,
+                    provider=provider_name,
+                    system_instruction=system_instructions
                 )
-            else:
-                self.logger.error(
-                    "Model execution failed",
-                    task_type=request.task_type.value,
-                    error=model_response.error,
-                )
-                
-                # Enhanced error handling for authentication issues
-                auth_error_keywords = ['authentication', 'unauthorized', '401', '403', 'api key', 'credential']
-                error_lower = (model_response.error or '').lower()
-                if any(keyword in error_lower for keyword in auth_error_keywords):
-                    try:
-                        from ..utils.ollama_error_handler import handle_ollama_error
-                        context = {
-                            'model_name': model_response.model,
-                            'operation': 'model_execution'
-                        }
-                        handle_ollama_error(model_response.error, context, display_to_user=True)
-                        
-                        # Prompt user to sign in (Ollama-specific, only in Normal mode - NEVER in Telegram mode)
-                        if model_response.provider == 'ollama':
-                            import sys
-                            import os
-                            # Check if running in Telegram mode via environment variable
-                            is_telegram_mode = os.getenv('VEXIS_TELEGRAM_MODE', '').lower() in ('true', '1', 'yes')
-                            if sys.stdin.isatty() and not is_telegram_mode:  # Only prompt if in terminal AND not in Telegram mode
-                                try:
-                                    choice = input("\nWould you like to sign in to Ollama now? (y/n): ").lower().strip()
-                                    if choice in ['y', 'yes']:
-                                        import subprocess
-                                        print("\n🔐 Opening Ollama sign-in...")
-                                        try:
-                                            result = subprocess.run(["ollama", "signin"], capture_output=False, text=True)
-                                            if result.returncode == 0:
-                                                print("✓ Sign-in initiated. Please complete it in your browser.")
-                                                print("Then try running your command again.")
-                                            else:
-                                                print("✗ Failed to initiate sign-in.")
-                                        except FileNotFoundError:
-                                            print("✗ Ollama command not found. Please ensure Ollama is installed.")
-                                except (KeyboardInterrupt, EOFError):
-                                    print("\nOperation cancelled.")
-                            elif is_telegram_mode:
-                                # In Telegram mode, log the issue but don't block execution
-                                self.logger.info("Ollama authentication required but running in Telegram mode - skipping interactive sign-in prompt")
-                    except ImportError:
-                        pass  # Fallback to just logging the error
 
-            return model_response
+                # Make API call
+                api_response = self.vision_client.generate_response(api_request)
+
+                if not api_response.success:
+                    # API call failed, don't retry on API errors
+                    model_response = ModelResponse(
+                        success=api_response.success,
+                        content=api_response.content,
+                        task_type=request.task_type,
+                        model=api_response.model or model_name,
+                        provider=api_response.provider or provider_name,
+                        tokens_used=api_response.tokens_used,
+                        cost=api_response.cost,
+                        latency=time.time() - start_time,
+                        error=api_response.error,
+                    )
+                    
+                    self.logger.error(
+                        "Model execution failed",
+                        task_type=request.task_type.value,
+                        error=model_response.error,
+                    )
+                    
+                    # Enhanced error handling for authentication issues
+                    auth_error_keywords = ['authentication', 'unauthorized', '401', '403', 'api key', 'credential']
+                    error_lower = (model_response.error or '').lower()
+                    if any(keyword in error_lower for keyword in auth_error_keywords):
+                        try:
+                            from ..utils.ollama_error_handler import handle_ollama_error
+                            context = {
+                                'model_name': model_response.model,
+                                'operation': 'model_execution'
+                            }
+                            handle_ollama_error(model_response.error, context, display_to_user=True)
+                            
+                            # Prompt user to sign in (Ollama-specific, only in Normal mode - NEVER in Telegram mode)
+                            if model_response.provider == 'ollama':
+                                import sys
+                                import os
+                                # Check if running in Telegram mode via environment variable
+                                is_telegram_mode = os.getenv('VEXIS_TELEGRAM_MODE', '').lower() in ('true', '1', 'yes')
+                                if sys.stdin.isatty() and not is_telegram_mode:  # Only prompt if in terminal AND not in Telegram mode
+                                    try:
+                                        choice = input("\nWould you like to sign in to Ollama now? (y/n): ").lower().strip()
+                                        if choice in ['y', 'yes']:
+                                            import subprocess
+                                            print("\n🔐 Opening Ollama sign-in...")
+                                            try:
+                                                result = subprocess.run(["ollama", "signin"], capture_output=False, text=True)
+                                                if result.returncode == 0:
+                                                    print("✓ Sign-in initiated. Please complete it in your browser.")
+                                                    print("Then try running your command again.")
+                                                else:
+                                                    print("✗ Failed to initiate sign-in.")
+                                            except FileNotFoundError:
+                                                print("✗ Ollama command not found. Please ensure Ollama is installed.")
+                                    except (KeyboardInterrupt, EOFError):
+                                        print("\nOperation cancelled.")
+                                elif is_telegram_mode:
+                                    # In Telegram mode, log the issue but don't block execution
+                                    self.logger.info("Ollama authentication required but running in Telegram mode - skipping interactive sign-in prompt")
+                        except ImportError:
+                            pass  # Fallback to just logging the error
+                    
+                    return model_response
+
+                # API call succeeded, validate output format
+                is_valid, validation_error = self._validate_output_format(
+                    api_response.content,
+                    request.task_type
+                )
+
+                if is_valid:
+                    # Output is valid, return success
+                    model_response = ModelResponse(
+                        success=True,
+                        content=api_response.content,
+                        task_type=request.task_type,
+                        model=api_response.model or model_name,
+                        provider=api_response.provider or provider_name,
+                        tokens_used=api_response.tokens_used,
+                        cost=api_response.cost,
+                        latency=time.time() - start_time,
+                        error=None,
+                    )
+
+                    self.logger.info(
+                        "Model execution successful",
+                        task_type=request.task_type.value,
+                        model=model_response.model,
+                        latency=model_response.latency,
+                        attempt=attempt + 1,
+                    )
+
+                    return model_response
+                else:
+                    # Output validation failed, log and retry
+                    self.logger.warning(
+                        "Output validation failed, retrying",
+                        task_type=request.task_type.value,
+                        attempt=attempt + 1,
+                        max_retries=self.MAX_RETRIES,
+                        validation_error=validation_error,
+                    )
+                    
+                    if attempt == self.MAX_RETRIES - 1:
+                        # Last attempt failed, return the last response with validation error
+                        model_response = ModelResponse(
+                            success=False,
+                            content=api_response.content,
+                            task_type=request.task_type,
+                            model=api_response.model or model_name,
+                            provider=api_response.provider or provider_name,
+                            tokens_used=api_response.tokens_used,
+                            cost=api_response.cost,
+                            latency=time.time() - start_time,
+                            error=f"Output validation failed after {self.MAX_RETRIES} attempts: {validation_error}",
+                        )
+                        return model_response
 
         except ValidationError:
             raise
@@ -334,6 +388,53 @@ class ModelRunner:
         except Exception as e:
             self.logger.error(f"Template formatting error: {e}")
             return request.prompt
+
+    def _validate_output_format(self, content: str, task_type: TaskType) -> tuple[bool, Optional[str]]:
+        """Validate that the output matches the expected format for the task type"""
+        if not content or not content.strip():
+            return False, "Output is empty"
+
+        if task_type == TaskType.INPUT_SUMMARIZATION:
+            # Must be exactly one sentence
+            sentences = [s.strip() for s in content.split('.') if s.strip()]
+            # Check if content ends with period and has no other sentence-ending punctuation
+            if content.count('.') > 1 or content.count('!') > 0 or content.count('?') > 0:
+                return False, "Summary must be exactly one sentence"
+            # Check for code blocks
+            if '```' in content:
+                return False, "Summary must not contain code blocks"
+            return True, None
+
+        elif task_type == TaskType.PHASE2_COMMAND_EXTRACTION:
+            # Must contain at least one code block
+            if '```' not in content:
+                return False, "Command extraction must contain at least one code block"
+            return True, None
+
+        elif task_type == TaskType.PHASE4_LOG_EVALUATION:
+            # Either success (no code blocks) or failure (with code blocks)
+            # Both formats are valid as long as they're consistent
+            has_code_block = '```' in content
+            # Just check that it's not empty
+            return True, None
+
+        elif task_type == TaskType.PHASE5_SUMMARY_GENERATION:
+            # Must NOT contain code blocks
+            if '```' in content:
+                return False, "Summary must not contain code blocks"
+            # Check for shell command patterns
+            suspicious_patterns = ['$', '#!', 'sudo ', 'apt ', 'npm ', 'pip ']
+            if any(pattern in content for pattern in suspicious_patterns):
+                return False, "Summary must not contain shell commands"
+            return True, None
+
+        elif task_type == TaskType.PHASE1_COMMAND_SUGGESTION:
+            # Should contain some substantive content
+            if len(content.strip()) < 50:
+                return False, "Command suggestion is too short"
+            return True, None
+
+        return True, None
 
     def _get_system_instructions(self, task_type: TaskType) -> str:
         """Get system instructions for better AI behavior"""
