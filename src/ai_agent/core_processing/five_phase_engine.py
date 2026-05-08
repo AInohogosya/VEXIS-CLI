@@ -693,6 +693,9 @@ class FivePhaseEngine:
                 # Use the full response content as the summary (plain text, not code blocks)
                 summary = response.content.strip()
                 
+                # Fallback: Remove code blocks if LLM ignored the plain text instruction
+                summary = self._remove_code_blocks(summary)
+                
                 if summary:
                     context.final_summary = summary
                     self.logger.info("Phase 5 completed successfully",
@@ -851,6 +854,25 @@ class FivePhaseEngine:
                         text_preview=text[:100] + "..." if len(text) > 100 else text)
         
         return is_failure
+    
+    def _remove_code_blocks(self, text: str) -> str:
+        """
+        Remove code blocks from text, keeping only plain text.
+        
+        Args:
+            text: Text that may contain code blocks
+            
+        Returns:
+            Text with code blocks removed
+        """
+        # Remove code blocks (including language specifiers)
+        pattern = r'```(?:\w+)?\s*\n?.*?```'
+        result = re.sub(pattern, '', text, flags=re.DOTALL)
+        
+        # Clean up extra whitespace
+        result = re.sub(r'\n\s*\n\s*\n', '\n\n', result).strip()
+        
+        return result
     
     def _extract_all_code_blocks(self, text: str) -> Optional[str]:
         """

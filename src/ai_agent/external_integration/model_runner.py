@@ -95,16 +95,38 @@ CRITICAL EVALUATION RULES:
 4. **Never Accept Defeat** - If the task failed, do not stop at analysis. Continue proposing alternative approaches until success is achieved.
 5. **Code Block Re-output** - On failure, you MUST re-output corrected code blocks. Success is determined by the absence of code blocks.{conversation_history}''',
 
-            TaskType.PHASE5_SUMMARY_GENERATION.value: '''I received the instruction {user_prompt} and have been executing commands like this to carry it out. {full_terminal_log} Now, I need to explain to the person who gave the instruction what I did, how I did it, and what the results were.
+            TaskType.PHASE5_SUMMARY_GENERATION.value: '''I received the instruction "{user_prompt}" and have been executing commands. Here is the terminal log: {full_terminal_log}
 
-CRITICAL SUMMARY REQUIREMENTS:
-1. **Explicit Success/Failure Declaration** - Clearly state whether the task SUCCEEDED or FAILED. Do not use ambiguous language.
-2. **Success Criteria** - Explain specifically how success was verified (not just that commands ran)
-3. **Retry History** - If multiple attempts were made, summarize what approaches were tried and why the final one succeeded
-4. **Final Result** - State what was actually achieved vs. what was requested
-5. **Output Format** - Provide your summary as PLAIN TEXT. Do NOT use code blocks. Do NOT include shell commands or scripts. Write a natural language explanation.
+Your task is to write a HUMAN-READABLE SUMMARY in plain English explaining what was done and the result.
 
-Remember: "Completed" does NOT mean "Succeeded". Be explicit about whether the goal was fully achieved.{conversation_history}''',
+ABSOLUTELY FORBIDDEN:
+- Do NOT output any code blocks (```)
+- Do NOT output any shell commands, scripts, or bash code
+- Do NOT output any programming code
+- Do NOT use markdown formatting
+- Do NOT include variable assignments like PROJECT_ROOT=...
+- Do NOT include if/then/else logic or conditionals
+- Do NOT include any technical implementation details
+
+REQUIRED FORMAT:
+- Write in plain English sentences
+- Explain what the task was
+- Explain what commands were run (in plain English, not the actual commands)
+- Explain whether the task succeeded or failed
+- Explain the final result
+- Keep it concise and readable
+
+Example of GOOD summary:
+"The task was to fix the database connection. I updated the configuration file and restarted the service. The database connection now works correctly. Task succeeded."
+
+Example of BAD summary (DO NOT DO THIS):
+"```bash
+PROJECT_ROOT=/home/user
+cd $PROJECT_ROOT
+sed -i 's/old/new/' config.py
+```"
+
+Write your summary now in plain English only:{conversation_history}''',
         }
 
     def get_template(self, task_type: TaskType) -> str:
