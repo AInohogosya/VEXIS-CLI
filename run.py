@@ -2215,12 +2215,26 @@ def main():
             telegram_bot=telegram_bot
         )
         
+        # Read timeouts from config.yaml so they are determined solely by the config file
+        command_timeout = 1800
+        task_timeout = 7200
+        try:
+            from ai_agent.utils.config import ConfigManager
+            if config_path.exists():
+                cfg_mgr = ConfigManager(str(config_path))
+                cfg = cfg_mgr.load_config()
+                if hasattr(cfg, 'execution'):
+                    command_timeout = getattr(cfg.execution, 'command_timeout', 1800)
+                    task_timeout = getattr(cfg.execution, 'task_timeout', 7200)
+        except Exception:
+            pass
+        
         # Run the instruction with 5-phase options
         options = {
             "debug": debug_mode,
             "max_iterations": max_iterations,
-            "command_timeout": 1800,
-            "task_timeout": 7200,  # 120 minutes
+            "command_timeout": command_timeout,
+            "task_timeout": task_timeout,
             "telegram_mode": selected_mode == "telegram"
         }
         

@@ -37,28 +37,13 @@ class FivePhaseAIAgent:
         self.logger.info("5-Phase Pipeline AI Agent initialized")
 
     def _build_engine_config(self) -> Dict[str, Any]:
-        """Build engine config from both legacy and current config sections."""
+        """Build engine config from config.yaml, using execution section as source of truth for timeouts."""
         execution = getattr(self.config, "execution", None)
         engine = getattr(self.config, "engine", None)
 
-        engine_command_timeout = getattr(engine, "command_timeout", 600)
-        execution_command_timeout = getattr(execution, "command_timeout", 600)
-        engine_task_timeout = getattr(engine, "task_timeout", 5400)
-        execution_task_timeout = getattr(execution, "task_timeout", 5400)
-
         return {
-            # Prefer explicit engine values, but honor the legacy execution
-            # section when the engine section is still at dataclass defaults.
-            "command_timeout": (
-                engine_command_timeout
-                if engine_command_timeout != 600
-                else execution_command_timeout
-            ),
-            "task_timeout": (
-                engine_task_timeout
-                if engine_task_timeout != 5400
-                else execution_task_timeout
-            ),
+            "command_timeout": getattr(execution, "command_timeout", 600),
+            "task_timeout": getattr(execution, "task_timeout", 7200),
             "max_iterations": getattr(
                 engine,
                 "max_iterations",
