@@ -1152,7 +1152,7 @@ class TerminalHistory:
         from types import SimpleNamespace
         
         overall_timeout = timeout
-        inactivity_timeout = max(timeout, self.DEFAULT_TIMEOUT)
+        inactivity_timeout = self.DEFAULT_TIMEOUT
         
         # Join commands with newlines to execute sequentially in same shell.
         # Commands that explicitly end with "&" are treated as persistent
@@ -1220,6 +1220,7 @@ class TerminalHistory:
                     shell=False,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
+                    stdin=subprocess.DEVNULL,
                     cwd=str(self._current_directory)
                 )
             else:
@@ -1228,6 +1229,7 @@ class TerminalHistory:
                     shell=False,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
+                    stdin=subprocess.DEVNULL,
                     cwd=str(self._current_directory),
                     start_new_session=True
                 )
